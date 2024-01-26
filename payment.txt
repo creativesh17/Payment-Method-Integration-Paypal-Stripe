@@ -1,0 +1,584 @@
+@#017098AB07333
+@#017098AB@#07333
+@#017098AB/PYL
+
+
+1 > frontend prepare
+// corresponding routes
+2 > Traits>ConsumesExternalServices.php
+3 > PaymentController
+4 > configure config>services.php
+5 > configure .env
+6 > App > Services > PapPalService.php
+
+php artisan tinker
+$paypal = new App\Services\PayPalService;
+$paypal->makeRequest('GET', '/v1/invoicing/invoices')
+
+$paypal = new App\Services\PayPalService;
+$paypal->createOrder(100.01, 'USD')
+$paypal-capturePayment('id')
+
+// cancelled
+// add 'jpy' to currencies seeder
+// Resolvers
+// tinker test
+//  $resolver = new App\Resolvers\PaymentPlatformResolver;
+// $resolver->resolveService(1);
+// change in the resolver
+
+// stripe
+1 > configure config>services.php
+2 > configure .env
+
+// 4242 4242 4242 4242 0/24 242 42424
+
+tinker
+$stripe = new App\Services\StripeServices;
+$stripe->makeRequest('GET', '/v1/balance')
+
+3 > configure StripeService
+
+// stripe elements
+4 > configure stripe-collapse
+
+// we are obtaining the payment_method with a token taht represents that
+// we can use that token to basically create a payment and authorize that correspondingly
+
+
+// stripe api
+// create payment intent
+// In stripe, element taht needs decimal positions nedd to be mulltiplied by 100
+
+// public function confirmPayment() {}
+
+tinker
+php artisan tinker
+1 > $stripe = new App\Service\StripeService;
+2 > $stripe->createIntent(5.01, 'USD', '13213ewqddwqewqe')
+Got an ID to confirm that
+status => 'requires_cofirmation'
+
+// public function createIntent() {}
+
+tinker // confirm payment
+3 > $stripe->confirmPayment('paymentID')
+
+
+// stripe sca
+// planning your migration
+// European countries will decline payments
+
+
+
+// production
+1 > need live account
+2 > need to change URL or api keys or both
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+< ============================================================================================================================ >
+< ============================================================================================================================ >
+< ============================================================================================================================ >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//****** Initials - Obtaining and preparing a Laravel project to process payments
+
+1 > make:model PaymentPlatform -m
+2 > make:model Currency -m
+3 > modify migration file and add protected $fillable in two models // $table->string('iso')->primary();
+// 'name', 'image' in PaymentPlatform model // and  // 'iso' in Currency model
+4 > $primaryKey = 'iso' and $incrementing = false in Currency model // no 'id' column in Currency model
+5 > configure database inside .env
+// APP_NAME = "Payment Processing"
+// APP_URL = http://host.test
+// DB_DATABASE > DB_USERNAME
+6 > make two seeders 
+// make:seeder PaymentPlatformsTableSeeder
+// make:seeder CurrenciesTableSeeder
+// make folder public>img>payment-platforms > paypal.jpg + stripe.jpg
+7 > fill seeder and migrate:fresh --seed
+
+
+//*** Preparing some visual components in Laravel to process payments
+1 > configure frontend app
+2 > configure frontend welcome
+3 > configure frontend home // you need to do it several time
+
+
+//****** Building a payment generator to process from Laravel
+
+1 > render $currencies and $paymentPlatforms inside home
+2 > make PaymentController
+3 > add routes
+4 > first route is pay() , approval(), cancelled()
+5 > add necessary validations and test
+
+
+//*** Allowing to consume the API of any payment platform from Laravel
+1 > install guzzlehttp/guzzle
+// creating a component to use any API of the payment platforms
+2 > App/Traits -> make ConsumesExternalServices.php
+// to create a request we need a client, and that client will come from Guzzlehttp
+// base_uri is going to depend on the service/component that is using this trait
+// once we have the client we need to create a response
+// so once we have the response object, we need to obtain the body and eventually the contents of that body
+// return the response
+// NO Magic so far
+// we need to add the capability to resolve authorization for this request before even to send the request and after sending the request
+// we need to add the capability to decode that specific response
+// for that we need to call a method that may exist in the service/component that is using this trait
+// $this->resolveAuthorization(&$queyParams, &$formParams, &$headers)
+// now we need to decode response
+// $response = $this->decodeResponse($response)
+// only call >resolveAuthorization() and decodeResponse() if they exist
+
+[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+
+
+<?php
+
+namespace App\Traits;
+
+use GuzzleHttp\Client;
+
+trait ConsumesExternalServices {
+
+    public function makeRequest($method, $requestUrl, $queryParams = [], $formParams = [], $headers = [], $isJsonRequest = false) {
+
+        $client = new Client([
+            'base_uri' => $this->baseUri,
+        ]);
+
+        if(method_exists($this, 'resolveAuthorization')) {
+            $this->resolveAuthorization($queryParams, $formParams, $headers);
+        }
+
+        $response = $client->request($method, $requestUrl, [
+            $isJsonRequest ? 'json' : 'form_params' => $formParams,
+            'headers' => $headers,
+            'query' => $queryParams,
+        ]);
+
+        $response = $response->getBody()->getContents();
+
+        if(method_exists($this, 'decodeResponse')) {
+            $response = $this->decodeResponse($response);
+        }
+
+        return $response;
+
+    }
+
+}
+
+
+
+]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+
+
+
+
+
+
+//******  Preparing Laravel to use PayPal as a payment platform
+
+// create sandbox account // search 'developer paypal'
+1 > developer.paypal.com
+
+// left sidebar Sandbox > Account
+/////// Most Probably two accounts are already provided
+////// create two accounts one Personal and other Business
+// create account > Create custom account > Country = USA > Account Type = Personal (Buyer Account) > Email = any email(does not need to exist)
+// Password > First Name > Last Name > Bank Verified Account = Yes > Select Payment Card = PayPal > Credit Card = Visa / Master(Preferred)
+////// Now repeat everything for Business account
+// You can check from View/Edit or if you want to be more realistic then go to the sandbox.paypal.com
+2 > sandbox.paypal.com
+
+// Inside developer
+3 > Go to Dashboard > My Apps and Credentials > Create App > App Name and Sandbox Business Account , then Create App
+4 > Collect Client ID and Secret
+// search 'paypal api' , you will get base_uri from Get Started > Make REST API Calls Sandbox and Live
+5 > add a new service credebtials 'paypal' > config > services.php
+
+	'paypal' => [
+        	'base_uri' => env('PAYPAL_BASE_URI'),
+	        'client_id' => env('PAYPAL_CLIENT_ID'),
+        	'client_secret' => env('PAYPAL_CLIENT_SECRET'),
+	 ],
+
+6 > add environment variables in .env
+// create services to use ConsumesExternalServices.php
+7 > add file app > Services > PaypalService.php
+
+[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+
+	PayPalService.php
+	<?php
+
+	namespace App\Services;
+
+	use App\Traits\ConsumesExternalServices;
+
+	class PayPalService {
+
+		use ConsumesExternalServices;
+
+		protected $baseUri;
+		protected $clientId;
+		protected $clientSecret;
+
+		public function __construct() {
+			$this->baseUri = config('services.paypal.base_uri');
+			$this->clientId = config('services.paypal.client_id');
+			$this->clientSecret = config('services.paypal.client_secret');
+		}
+		
+		public function resolveAuthorization(&$queryParams, &$formParams, &$headers) {
+			return ;
+		}
+
+		public function decodeResponse($response) {
+			return ;
+		}
+
+	}
+
+]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+
+
+
+
+
+
+//******  Implementing the necessary actions in Laravel to use the PayPal API
+
+// Decoding and authenticating requests to the PayPal API
+
+1 > PayPalService.php > resolveAuthorization() method add header
+	$headers['Authorization'] = $this->resolveAccessToken();
+2 > define resolveAccessToken()
+	$credentials = base64_encode("{$this->clientId}:{$this->clientSecret}");
+	return "Basic {$credentials}";
+3 > define decodeResponse($response) method
+	return json_decode($response)
+
+// right now we are capable to make any request to the payPal API
+// time to test
+---> php artisan tinker
+---> $paypal = new App\Services\PayPalService;
+---> $paypal->makeRequest('GET', '/v1/invoicing/invoices'); // obtain a list of invoices
+// getting a success response
+
+
+// Creating an order in the PayPal API for a given amount and currency
+// search 'paypal api' find Orders in the left
+
+4 > make createOrder() function
+
+	public function createOrder($value, $currency) {
+        	return $this->makeRequest(
+            	'POST',
+            	'/v2/checkout/orders',
+            	[],
+            	[
+                	'intent' => 'CAPTURE',
+                	'purchase_units' => [
+                    		0 => [
+                        		'amount' => [
+                            			'currency_code' => strtoupper($currency),
+                            			'value' => $value
+                        		]
+                    		]
+                	],
+                	'application_context' => [
+                    		'brand_name' => config('app.name'),
+                    		'shipping_preferences' => 'NO_SHIPPING',
+                    		'user_action' => 'PAY_NOW',
+                    		'return_url' => route('approval'),
+                    		'cancel_url' => route('cancelled')
+                	]
+            	],
+            	[],
+            	$isJsonRequest = true
+        	);
+    	}
+
+
+
+// right now we are capable to make any order to the payPal API
+// time to test
+---> php artisan tinker
+---> $paypal = new App\Services\PayPalService;
+---> $paypal->createOrder(20.01, 'USD'); // create an order
+// getting different URLS such "self", "approve", "update", "capture"
+// you need approve URL and ID for later
+
+
+// Capturing a payment of an order given in Laravel with the PayPal API
+// search 'paypal api' find Orders in the left
+>> left menu Orders > Capture payment for order  
+
+5 > implement capturePayment() method
+	public function capturePayment($approvalId) {
+        	return $this->makeRequest(
+            		'POST',
+	                "/v2/checkout/orders/{$approvalId}/capture",
+            		[],
+            		[],
+            		[
+		                'Content-Type' => 'application/json'
+            		]
+        	);
+    	}
+
+---> php artisan tinker
+---> $paypal = new App\Services\PayPalService;
+// take the URL from previous payment where it is approved 
+// paste the url in the browser
+// pay now and you will be redirected to the login location
+---> $paypal->capturePayment('4P017259FN3188030') // order id
+
+
+
+
+
+
+
+
+
+// Controlling from Laravel the creation of an order using PayPal Part 1
+
+// now our user should be able to do it (create and capture order)
+>> resolve the service we want to use depending on the input of the user (later) now resolve only paypal
+
+6 > PaymentController pay() method
+
+	public function pay(Request $request) {
+        	$rules = [
+            			'value' => ['required', 'numeric', 'min:5'],
+            			'currency' => ['required', 'exists:currencies,iso'],
+            			'payment_platform' => ['required', 'exists:payment_platforms,id'],
+        		];
+        
+        	$request->validate($rules);
+
+        	$paymentPlatform = resolve(PayPalService::class);
+        	return $paymentPlatform->handlePayment($request);
+
+    	}
+
+// create handlePayment() method
+7 > PayPalService.php
+
+	public function handlePayment(Request $request) {
+
+        	$order = $this->createOrder($request->value, $request->currency);
+
+        	$orderLinks = collect($order->links);
+
+        	$approve = $orderLinks->where('rel', 'approve')->first();
+		
+		session()->put('approvalId', $order->id);
+		
+        	return redirect($approve->href);
+        
+    	}
+// now we are in the approval() method in PaymentController
+----->
+
+
+
+
+
+
+
+// Controlling from Laravel the capture of a payment with PayPal Part 2
+
+// write the approval method() in PaymentController
+// we need only order id to capture payment details
+
+8 > PaymentController
+	public function approval() {
+
+        	$paymentPlatform = resolve(PayPalService::class);
+        
+        	return $paymentPlatform->handleApproval();
+
+    	}
+
+// create >handleApproval() method
+
+9 > PayPalService.php
+
+	public function handleApproval() {
+
+        	if(session()->has('approvalId')) {
+
+            		$approvalId = session()->get('approvalId');
+
+            		$payment = $this->capturePayment($approvalId);
+
+            		$name = $payment->payer->name->given_name;
+            		$payment = $payment->purchase_units[0]->payments->captures[0]->amount;
+            		$amount = $payment->value;
+            		$currency = $payment->currency_code;
+
+            		return redirect()->route('home')
+                    		->withSuccess([ "payment" => "Thanks {$name}. We received {$amount}    {$currency} from you." ]);
+
+        	}
+
+        	return redirect()->route('home')->withErrors("We can not capture the payment. Try again, Please!");
+    	}
+
+----->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
